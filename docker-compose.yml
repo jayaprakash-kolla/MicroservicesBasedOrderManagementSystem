@@ -1,0 +1,45 @@
+# Kafka is the only external service this system needs.
+# Each microservice runs its own in-memory H2 database inside its own JVM.
+#
+#   docker compose up -d
+#
+version: "3.8"
+
+services:
+
+  kafka:
+    image: bitnamilegacy/kafka:3.7
+    container_name: oms-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft mode: no separate ZooKeeper container required.
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      # Topics are created on first use, so no manual setup step is needed.
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Web UI for inspecting topics, messages, and consumer lag.
+  # Open http://localhost:8090 once it is up.
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: oms-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: "true"

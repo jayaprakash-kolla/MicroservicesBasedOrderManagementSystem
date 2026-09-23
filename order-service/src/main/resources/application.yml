@@ -1,0 +1,52 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: order-service
+
+  # ---------- this service's OWN database ----------
+  # Each service has a separate schema. Nothing else can read it, which is what
+  # forces communication to happen through events instead of SQL joins.
+  datasource:
+    url: jdbc:h2:mem:orderdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: order-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        # Java type headers travel with each message, so one listener method can
+        # take InventoryReservedEvent and another InventoryFailedEvent without
+        # any manual type mapping.
+        spring.json.trusted.packages: com.jayaprakash.oms.common.events
+
+eureka:
+  instance:
+    # Register by IP rather than hostname; on this machine the reported hostname
+    # (JayaPrakash-Laptop.mshome.net, a Hyper-V/WSL virtual adapter name) isn't
+    # resolvable via DNS, which breaks the gateway's lb:// routing.
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+
+logging:
+  level:
+    com.jayaprakash.oms: INFO
+    org.apache.kafka: WARN
+    com.netflix.discovery: WARN

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.jayaprakash.oms</groupId>
+        <artifactId>order-management-system</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>common-events</artifactId>
+    <name>common-events</name>
+    <description>Event contracts and shared Kafka wiring used by every service</description>
+
+    <dependencies>
+        <!-- Only Kafka support: this module must stay free of web and JPA concerns. -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+              This module is a plain library, not an application.
+              The Boot repackage goal is deliberately NOT applied here, otherwise
+              the produced jar would be an executable fat jar that other modules
+              cannot use as a dependency.
+            -->
+        </plugins>
+    </build>
+
+</project>

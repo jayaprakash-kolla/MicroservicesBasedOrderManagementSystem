@@ -1,0 +1,22 @@
+server:
+  port: 8761
+
+spring:
+  application:
+    name: discovery-server
+
+eureka:
+  client:
+    # This IS the registry, so it neither registers with nor fetches from itself.
+    register-with-eureka: false
+    fetch-registry: false
+  server:
+    # Disabled for local development. Self-preservation stops Eureka evicting
+    # instances during a suspected network partition, which is helpful in
+    # production but confusing when you are restarting services by hand.
+    enable-self-preservation: false
+
+logging:
+  level:
+    com.netflix.eureka: WARN
+    com.netflix.discovery: WARN
