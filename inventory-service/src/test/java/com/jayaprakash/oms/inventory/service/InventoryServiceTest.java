@@ -199,4 +199,35 @@ class InventoryServiceTest {
 
         verify(itemRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("a completed payment turns the hold into a permanent reduction")
+    void commitClearsReservedCount() {
+        InventoryItem laptop = new InventoryItem("LAPTOP-001", 10);
+        laptop.reserve(3);   // 7 available, 3 reserved
+
+        Reservation hold = savedReservation("LAPTOP-001", 3);
+        when(reservationRepository.findByOrderIdAndStatus(1L, ReservationStatus.RESERVED))
+                .thenReturn(List.of(hold));
+        when(itemRepository.findById("LAPTOP-001")).thenReturn(Optional.of(laptop));
+
+        inventoryService.commitForOrder(1L);
+
+        // Sold units do not come back to available; they just stop being "held".
+        assertThat(laptop.getAvailableQuantity()).isEqualTo(7);
+        assertThat(laptop.getReservedQuantity()).isZero();
+        assertThat(hold.getStatus()).isEqualTo(ReservationStatus.COMMITTED);
+    }
+
+    @Test
+    @DisplayName("a duplicate payment confirmation does not commit the same stock twice")
+    void commitIsIdempotent() {
+        // Already committed, so the RESERVED query comes back empty.
+        when(reservationRepository.findByOrderIdAndStatus(1L, ReservationStatus.RESERVED))
+                .thenReturn(List.of());
+
+        inventoryService.commitForOrder(1L);
+
+        verify(itemRepository, never()).save(any());
+    }
 }

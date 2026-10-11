@@ -18,6 +18,7 @@ import com.jayaprakash.oms.order.repository.OrderRepository;
 import com.jayaprakash.oms.order.service.OrderService;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -82,9 +83,10 @@ class OrderSagaIntegrationTest {
      * Creates a fresh consumer and clears the database before each test.
      *
      * <p>Input: none. Processing: builds a consumer subscribed to the two topics
-     * order-service produces, and empties the orders table. Output: none. A new
-     * consumer group per test means each test reads from the beginning and never
-     * sees another test's messages.
+     * order-service produces, and empties the orders table. Output: none. The
+     * broker is shared across tests and each new consumer group reads from the
+     * beginning, so it also sees earlier tests' messages: assertions must filter
+     * by their own order id.
      */
     @BeforeEach
     void setUp() {
@@ -130,16 +132,15 @@ class OrderSagaIntegrationTest {
         OrderResponse order = placeOrder("500.00");
 
         ConsumerRecords<String, Object> records = KafkaTestUtils.getRecords(testConsumer, TIMEOUT);
-        List<Object> created = records.records(Topics.ORDER_CREATED).iterator().hasNext()
-                ? List.of(records.records(Topics.ORDER_CREATED).iterator().next().value())
-                : List.of();
+        List<OrderCreatedEvent> created = new ArrayList<>();
+        for (var record : records.records(Topics.ORDER_CREATED)) {
+            if (record.value() instanceof OrderCreatedEvent event && event.orderId().equals(order.id())) {
+                created.add(event);
+            }
+        }
 
         assertThat(created).hasSize(1);
-        assertThat(created.get(0)).isInstanceOf(OrderCreatedEvent.class);
-
-        OrderCreatedEvent event = (OrderCreatedEvent) created.get(0);
-        assertThat(event.orderId()).isEqualTo(order.id());
-        assertThat(event.totalAmount()).isEqualByComparingTo("500.00");
+        assertThat(created.get(0).totalAmount()).isEqualByComparingTo("500.00");
     }
 
     @Test
@@ -178,9 +179,15 @@ class OrderSagaIntegrationTest {
             assertThat(stored.getFailureReason()).contains("Insufficient stock");
         });
 
-        // Drain everything and confirm nothing landed on the compensation topic.
+        // Drain everything and confirm nothing for this order landed on the compensation topic.
         ConsumerRecords<String, Object> records = KafkaTestUtils.getRecords(testConsumer, Duration.ofSeconds(3));
-        assertThat(records.records(Topics.ORDER_CANCELLED)).isEmpty();
+        List<OrderCancelledEvent> compensations = new ArrayList<>();
+        for (var record : records.records(Topics.ORDER_CANCELLED)) {
+            if (record.value() instanceof OrderCancelledEvent cancelled && cancelled.orderId().equals(order.id())) {
+                compensations.add(cancelled);
+            }
+        }
+        assertThat(compensations).isEmpty();
     }
 
     @Test

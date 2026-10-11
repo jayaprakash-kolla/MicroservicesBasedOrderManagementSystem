@@ -21,7 +21,7 @@ import org.springframework.context.annotation.Import;
 public class OrderServiceApplication {
 
     /**
-     * Boots the order service on port 8081.
+     * Boots the order service on port 18081.
      *
      * @param args standard Spring Boot command line arguments
      */

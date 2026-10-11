@@ -1,5 +1,5 @@
 server:
-  port: 8083
+  port: 18083
 
 spring:
   application:
@@ -21,7 +21,7 @@ spring:
       path: /h2-console
 
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
     consumer:
       group-id: payment-service
       auto-offset-reset: earliest
@@ -41,7 +41,7 @@ eureka:
     prefer-ip-address: true
   client:
     service-url:
-      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+      defaultZone: ${EUREKA_URL:http://localhost:18761/eureka}
 
 logging:
   level:

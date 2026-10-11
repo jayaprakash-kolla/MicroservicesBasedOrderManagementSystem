@@ -8,8 +8,10 @@ import com.jayaprakash.oms.common.events.InventoryReservedEvent;
 import com.jayaprakash.oms.common.events.OrderCancelledEvent;
 import com.jayaprakash.oms.common.events.OrderCreatedEvent;
 import com.jayaprakash.oms.common.events.OrderLineItemDto;
+import com.jayaprakash.oms.common.events.PaymentCompletedEvent;
 import com.jayaprakash.oms.common.events.Topics;
 import com.jayaprakash.oms.inventory.domain.InventoryItem;
+import com.jayaprakash.oms.inventory.domain.ReservationStatus;
 import com.jayaprakash.oms.inventory.repository.InventoryItemRepository;
 import com.jayaprakash.oms.inventory.repository.ReservationRepository;
 import java.math.BigDecimal;
@@ -44,7 +46,8 @@ import org.springframework.test.context.TestPropertySource;
         partitions = 1,
         topics = {
                 Topics.ORDER_CREATED, Topics.ORDER_CANCELLED,
-                Topics.INVENTORY_RESERVED, Topics.INVENTORY_FAILED
+                Topics.INVENTORY_RESERVED, Topics.INVENTORY_FAILED,
+                Topics.PAYMENT_COMPLETED
         })
 @TestPropertySource(properties = "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}")
 class InventorySagaIntegrationTest {
@@ -159,6 +162,29 @@ class InventorySagaIntegrationTest {
             assertThat(item.getAvailableQuantity()).isEqualTo(10);
             assertThat(item.getReservedQuantity()).isZero();
         });
+    }
+
+    @Test
+    @DisplayName("a completed payment commits the hold, so reserved stock drops back to zero")
+    void paymentCompletionCommitsStock() {
+        sendOrderCreated(5L, 3);
+
+        await().atMost(TIMEOUT).untilAsserted(() ->
+                assertThat(itemRepository.findById("LAPTOP-001").orElseThrow().getReservedQuantity())
+                        .isEqualTo(3));
+
+        // Payment-service publishes this after a successful charge.
+        kafkaTemplate.send(Topics.PAYMENT_COMPLETED, "5",
+                new PaymentCompletedEvent(5L, "PAY-TEST", new BigDecimal("1500.00")));
+
+        await().atMost(TIMEOUT).untilAsserted(() -> {
+            InventoryItem item = itemRepository.findById("LAPTOP-001").orElseThrow();
+            assertThat(item.getAvailableQuantity()).isEqualTo(7);
+            assertThat(item.getReservedQuantity()).isZero();
+        });
+
+        assertThat(reservationRepository.findByOrderId(5L))
+                .allSatisfy(hold -> assertThat(hold.getStatus()).isEqualTo(ReservationStatus.COMMITTED));
     }
 
     @Test

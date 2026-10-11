@@ -18,7 +18,7 @@ import org.springframework.context.annotation.Import;
 public class PaymentServiceApplication {
 
     /**
-     * Boots the payment service on port 8083.
+     * Boots the payment service on port 18083.
      *
      * @param args standard Spring Boot command line arguments
      */

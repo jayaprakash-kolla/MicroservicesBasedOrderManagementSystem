@@ -138,6 +138,43 @@ public class InventoryService {
     }
 
     /**
+     * Final step of the happy path: turns the holds for a paid order into a
+     * permanent reduction of stock.
+     *
+     * <p>Input: the order id. Processing: finds every hold still in RESERVED
+     * state, removes its units from the reserved counter, and marks it
+     * COMMITTED. Output: none.
+     *
+     * <p>Without this step, {@code reservedQuantity} would only ever grow on
+     * successful orders, so the stock report would show units "held" for
+     * orders that finished long ago. Filtering on RESERVED makes it safe to run
+     * twice, exactly like {@link #releaseForOrder(Long, String)}.
+     *
+     * @param orderId the order whose payment completed
+     */
+    @Transactional
+    public void commitForOrder(Long orderId) {
+
+        List<Reservation> active =
+                reservationRepository.findByOrderIdAndStatus(orderId, ReservationStatus.RESERVED);
+
+        if (active.isEmpty()) {
+            log.warn("Nothing to commit for order {} (already committed or never reserved)", orderId);
+            return;
+        }
+
+        for (Reservation hold : active) {
+            InventoryItem item = itemRepository.findById(hold.getSkuCode()).orElseThrow();
+            item.commitReservation(hold.getQuantity());
+            itemRepository.save(item);
+            hold.markCommitted();
+        }
+        reservationRepository.saveAll(active);
+
+        log.info("Committed {} hold(s) for paid order {}", active.size(), orderId);
+    }
+
+    /**
      * Finds the first order line that cannot be satisfied.
      *
      * <p>Input: the order's line items. Processing: for each line, checks the

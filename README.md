@@ -4,6 +4,14 @@ Five Spring Boot services implementing a distributed order flow with the **saga 
 
 The interesting part is not the happy path — it is what happens when step 3 fails after step 2 already committed.
 
+## Showcase site
+
+**[Run an order through the saga in your browser](https://jayaprakash-kolla.github.io/MicroservicesBasedOrderManagementSystem/)**
+
+![The showcase site replaying the card-declined path: the order is created, stock is reserved, payment fails, and the cancellation releases the stock](docs/showcase.png)
+
+[`frontend/`](frontend) is a one-page site that explains the design and lets you run all three saga paths. The published copy runs an in-browser model of the services. Run it locally next to the real services and it drives them instead, drawing every Kafka message as it happens — see [Running the showcase site](#running-the-showcase-site).
+
 ---
 
 ## Contents
@@ -16,10 +24,11 @@ The interesting part is not the happy path — it is what happens when step 3 fa
 6. [Prerequisites](#prerequisites)
 7. [Running it locally](#running-it-locally)
 8. [Trying it out](#trying-it-out)
-9. [Running the tests](#running-the-tests)
-10. [Configuration reference](#configuration-reference)
-11. [Design decisions](#design-decisions)
-12. [Troubleshooting](#troubleshooting)
+9. [Running the showcase site](#running-the-showcase-site)
+10. [Running the tests](#running-the-tests)
+11. [Configuration reference](#configuration-reference)
+12. [Design decisions](#design-decisions)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -40,7 +49,7 @@ That is a saga. This project implements the **choreography** flavour: no central
                                |
                                v
                     +---------------------+
-                    |     API Gateway     |  :8080
+                    |     API Gateway     |  :18080
                     +---------------------+
                                |
               +----------------+----------------+
@@ -48,7 +57,7 @@ That is a saga. This project implements the **choreography** flavour: no central
               v                v                v
      +---------------+ +----------------+ +---------------+
      | order-service | | inventory-svc  | | payment-svc   |
-     |     :8081     | |     :8082      | |    :8083      |
+     |     :18081     | |     :18082      | |    :18083      |
      +---------------+ +----------------+ +---------------+
         | order_db |      | inventory_db |    | payment_db |
               \             |                /
@@ -56,10 +65,12 @@ That is a saga. This project implements the **choreography** flavour: no central
                 +-----------+--------------+
                             |
                       +-----------+
-                      |   Kafka   |  :9092
+                      |   Kafka   |  :19092
                       +-----------+
 
-     All three also register with Eureka (discovery-server :8761)
+     All three also register with Eureka (discovery-server :18761).
+     saga-monitor (:18084) reads every topic in its own consumer group
+     and streams the messages to the showcase site.
 ```
 
 Each service has its own H2 database that no other service can reach. That constraint is what forces the event-driven design — there is no way to "just join the tables".
@@ -77,8 +88,9 @@ Each service has its own H2 database that no other service can reach. That const
 | 2a | order | `inventory-reserved` | Status → `INVENTORY_RESERVED` | — |
 | 3 | payment | `inventory-reserved` | Charges the customer | `PaymentCompletedEvent` → `payment-completed` |
 | 4 | order | `payment-completed` | Status → `CONFIRMED` | — |
+| 4a | inventory | `payment-completed` | Commits the hold: reserved units become sold | — |
 
-Note that steps 2a and 3 both consume the same topic in **different consumer groups**, so each gets its own copy.
+Note that steps 2a and 3 both consume the same topic in **different consumer groups**, so each gets its own copy. Steps 4 and 4a work the same way.
 
 ### Failure path A — not enough stock
 
@@ -122,16 +134,17 @@ The card processor is a `SimulatedPaymentGateway` that declines any charge above
 order-management-system/
 ├── pom.xml                     parent reactor
 ├── docker-compose.yml          Kafka + Kafka UI
+├── frontend/                   showcase site (React + Vite), see frontend/README.md
 │
 ├── common-events/              shared library, not an application
 │   └── com/jayaprakash/oms/common/
 │       ├── events/             the 6 event records + Topics constants
 │       └── config/             KafkaMessagingConfig (producer + retry/DLT)
 │
-├── discovery-server/           Eureka registry            :8761
-├── api-gateway/                Spring Cloud Gateway       :8080
+├── discovery-server/           Eureka registry            :18761
+├── api-gateway/                Spring Cloud Gateway       :18080
 │
-├── order-service/              :8081  saga initiator, owns order state
+├── order-service/              :18081  saga initiator, owns order state
 │   └── com/jayaprakash/oms/order/
 │       ├── api/                controller + DTOs + error handling
 │       ├── domain/             Order, OrderLineItem, OrderStatus
@@ -139,17 +152,23 @@ order-management-system/
 │       ├── repository/
 │       └── service/            OrderService — the state machine
 │
-├── inventory-service/          :8082  reserves and releases stock
+├── inventory-service/          :18082  reserves and releases stock
 │   └── com/jayaprakash/oms/inventory/
 │       ├── domain/             InventoryItem, Reservation
-│       ├── messaging/          publisher + InventorySagaListener (2 listeners)
-│       └── service/            InventoryService — all-or-nothing reservation
+│       ├── messaging/          publisher + InventorySagaListener (3 listeners)
+│       └── service/            InventoryService — all-or-nothing reservation, release, commit
 │
-└── payment-service/            :8083  charges the customer
-    └── com/jayaprakash/oms/payment/
-        ├── domain/             Payment, PaymentStatus
-        ├── messaging/          publisher + PaymentSagaListener (1 listener)
-        └── service/            PaymentService + PaymentGateway
+├── payment-service/            :18083  charges the customer
+│   └── com/jayaprakash/oms/payment/
+│       ├── domain/             Payment, PaymentStatus
+│       ├── messaging/          publisher + PaymentSagaListener (1 listener)
+│       └── service/            PaymentService + PaymentGateway
+│
+└── saga-monitor/               :18084  read-only observer, streams events over SSE
+    └── com/jayaprakash/oms/monitor/
+        ├── messaging/          SagaEventListener (one pattern subscription)
+        ├── service/            event factory, bounded store, SSE broadcaster
+        └── api/                GET /api/v1/saga/stream and /api/v1/saga/events
 ```
 
 **Reading order if you are new to the code:** `Topics.java` → `OrderSagaListener` → `OrderService` → `InventoryService.releaseForOrder`. Those four files contain the entire saga.
@@ -182,11 +201,11 @@ docker compose up -d
 docker compose ps        # wait until oms-kafka is healthy
 ```
 
-Kafka is on `localhost:9092`. A web UI for browsing topics and messages is at **http://localhost:8090**.
+Kafka is on `localhost:19092`. A web UI for browsing topics and messages is at **http://localhost:18090**.
 
 ### Step 3 — Start the services, in this order
 
-Open five terminals. **Start the discovery server first** and give it about 20 seconds; the others will keep retrying registration but the gateway cannot route until at least one service has registered.
+Open six terminals. **Start the discovery server first** and give it about 20 seconds; the others will keep retrying registration but the gateway cannot route until at least one service has registered.
 
 ```bash
 # Terminal 1
@@ -202,6 +221,9 @@ cd inventory-service && mvn spring-boot:run
 cd payment-service && mvn spring-boot:run
 
 # Terminal 5
+cd saga-monitor && mvn spring-boot:run
+
+# Terminal 6
 cd api-gateway && mvn spring-boot:run
 ```
 
@@ -209,7 +231,7 @@ From an IDE: import the root `pom.xml` as a Maven project and run each `*Applica
 
 ### Step 4 — Confirm everything registered
 
-Open **http://localhost:8761** and check that `API-GATEWAY`, `ORDER-SERVICE`, `INVENTORY-SERVICE`, and `PAYMENT-SERVICE` all appear as registered instances.
+Open **http://localhost:18761** and check that `API-GATEWAY`, `ORDER-SERVICE`, `INVENTORY-SERVICE`, `PAYMENT-SERVICE`, and `SAGA-MONITOR` all appear as registered instances.
 
 Inventory-service seeds three SKUs at startup:
 
@@ -223,12 +245,12 @@ Inventory-service seeds three SKUs at startup:
 
 ## Trying it out
 
-All requests go through the gateway on port 8080.
+All requests go through the gateway on port 18080 (set in `api-gateway/src/main/resources/application.yml`).
 
 ### 1. The happy path
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/orders \
+curl -X POST http://localhost:18080/api/v1/orders \
   -H "Content-Type: application/json" \
   -d '{
         "customerId": "cust-1",
@@ -239,13 +261,13 @@ curl -X POST http://localhost:8080/api/v1/orders \
 You get back `202 Accepted` with the order in `PENDING`. Watch the four terminals — within a second you should see the whole saga run. Then check the result:
 
 ```bash
-curl http://localhost:8080/api/v1/orders/1
+curl http://localhost:18080/api/v1/orders/1
 ```
 
 Status should now be `CONFIRMED`. Stock has dropped:
 
 ```bash
-curl http://localhost:8080/api/v1/inventory
+curl http://localhost:18080/api/v1/inventory
 ```
 
 ### 2. Failure path A — inventory refuses
@@ -253,7 +275,7 @@ curl http://localhost:8080/api/v1/inventory
 `RARE-003` has exactly one unit, so ask for five:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/orders \
+curl -X POST http://localhost:18080/api/v1/orders \
   -H "Content-Type: application/json" \
   -d '{
         "customerId": "cust-1",
@@ -269,9 +291,9 @@ The simulated gateway declines anything above `payment.decline-above-amount` (de
 
 ```bash
 # Check stock BEFORE
-curl http://localhost:8080/api/v1/inventory
+curl http://localhost:18080/api/v1/inventory
 
-curl -X POST http://localhost:8080/api/v1/orders \
+curl -X POST http://localhost:18080/api/v1/orders \
   -H "Content-Type: application/json" \
   -d '{
         "customerId": "cust-1",
@@ -279,7 +301,7 @@ curl -X POST http://localhost:8080/api/v1/orders \
       }'
 
 # Wait a second, then check stock AFTER
-curl http://localhost:8080/api/v1/inventory
+curl http://localhost:18080/api/v1/inventory
 ```
 
 This is the part worth watching in the logs. In order:
@@ -295,12 +317,12 @@ inventory-service  Released 1 hold(s) for cancelled order 3 <- 3 units returned
 Available stock ends up exactly where it started. `reservedQuantity` returns to 0. Check the declined payment too:
 
 ```bash
-curl http://localhost:8080/api/v1/payments
+curl http://localhost:18080/api/v1/payments
 ```
 
 ### 4. Watch it in Kafka
 
-Open **http://localhost:8090**, go to Topics, and read the messages on `order-created`, `inventory-reserved`, `payment-failed`, and `order-cancelled`. The saga is visible as a literal sequence of messages.
+Open **http://localhost:18090**, go to Topics, and read the messages on `order-created`, `inventory-reserved`, `payment-failed`, and `order-cancelled`. The saga is visible as a literal sequence of messages.
 
 ### API summary
 
@@ -315,6 +337,24 @@ Open **http://localhost:8090**, go to Topics, and read the messages on `order-cr
 | `GET` | `/api/v1/payments/order/{orderId}` | payment | Payment for one order |
 
 Each service also exposes an H2 console at `http://localhost:{port}/h2-console` (JDBC URL `jdbc:h2:mem:orderdb`, `inventorydb`, or `paymentdb`; user `sa`, empty password).
+
+---
+
+## Running the showcase site
+
+With the services above running, start the site from a seventh terminal (needs Node.js 22.12 or newer):
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open **http://localhost:15173**. The page finds the gateway on port 18080 and switches to **Real services**. Pick a scenario and each Kafka message appears as a row in the diagram, with the time since the order was placed; the stock bars and charge list update from the real services.
+
+The dev server forwards `/api/v1/saga/*` to saga-monitor (18084) and every other `/api/v1/*` path to the gateway (18080), so the browser never makes a cross-origin request and the gateway needs no CORS setup. Without the backend, the same page falls back to its in-browser model.
+
+The published copy is deployed to GitHub Pages by `.github/workflows/deploy-frontend.yml` on every push to `main` that touches `frontend/`. Enable it once under **Settings → Pages → Source: GitHub Actions**. More detail in [`frontend/README.md`](frontend/README.md).
 
 ---
 
@@ -342,11 +382,14 @@ In IntelliJ or VS Code, right-click any test class and run it directly.
 | `OrderServiceTest` | order | unit | State machine: totals, transitions, idempotency guards, and that a payment failure publishes compensation while an inventory failure does not |
 | `OrderControllerTest` | order | web slice | 202 on accept, per-field validation errors, 404 shape |
 | `OrderSagaIntegrationTest` | order | embedded Kafka | Real round trip: happy path to `CONFIRMED`, both failure paths, duplicate events ignored |
-| `InventoryServiceTest` | inventory | unit | All-or-nothing reservation, unknown SKU, duplicate suppression, release |
-| `InventorySagaIntegrationTest` | inventory | embedded Kafka | Stock moves on `order-created`, comes back on `order-cancelled`, reserves once on redelivery |
+| `InventoryServiceTest` | inventory | unit | All-or-nothing reservation, unknown SKU, duplicate suppression, release, commit |
+| `InventorySagaIntegrationTest` | inventory | embedded Kafka | Stock moves on `order-created`, comes back on `order-cancelled`, is committed on `payment-completed`, reserves once on redelivery |
 | `SimulatedPaymentGatewayTest` | payment | unit | Threshold behaviour including the boundary |
 | `PaymentServiceTest` | payment | unit | Every path publishes exactly one event; a duplicate never reaches the gateway |
 | `PaymentSagaIntegrationTest` | payment | embedded Kafka | Accept and decline branches, one payment row per order |
+| `SagaEventFactoryTest`, `SagaEventStoreTest`, `SagaEventBroadcasterTest` | saga-monitor | unit | Topic recognition including `.DLT` copies, bounded buffer, disconnected browsers dropped |
+| `SagaMonitorIntegrationTest` | saga-monitor | embedded Kafka | Events published with the services' own Kafka config are observed and served over HTTP and SSE |
+| `simulation.test.ts` | frontend | Vitest (`npm test`) | The in-browser model reaches the same outcomes, failure reasons, and stock levels as the Java services |
 
 Each service's integration test runs that service for real and **plays the part of the others** by publishing the events they would have published. That keeps each test fast and independent while still exercising real serialisation, real listeners, and real transactions.
 
@@ -359,9 +402,9 @@ Asynchronous assertions use Awaitility rather than `Thread.sleep`, so they finis
 | Property | Where | Default | Meaning |
 |---|---|---|---|
 | `payment.decline-above-amount` | payment-service | `100000` | Charges strictly above this are declined |
-| `spring.kafka.bootstrap-servers` | all | `localhost:9092` | Override with `KAFKA_BOOTSTRAP_SERVERS` |
-| `eureka.client.service-url.defaultZone` | all | `http://localhost:8761/eureka` | Override with `EUREKA_URL` |
-| `server.port` | each service | 8080–8083, 8761 | HTTP port |
+| `spring.kafka.bootstrap-servers` | all | `localhost:19092` | Override with `KAFKA_BOOTSTRAP_SERVERS` |
+| `eureka.client.service-url.defaultZone` | all | `http://localhost:18761/eureka` | Override with `EUREKA_URL` |
+| `server.port` | each service | 18081–18084, 18080, 18761 | HTTP port (gateway 18080, saga-monitor 18084) |
 
 **Lower `payment.decline-above-amount` to 100** in `payment-service/src/main/resources/application.yml` if you want every order to fail and want to watch compensation repeatedly.
 
@@ -424,10 +467,10 @@ You ran `mvn` inside a service directory before building the root. Run `mvn clea
 Kafka is not up. Run `docker compose ps` and confirm `oms-kafka` is healthy — first startup takes 20–30 seconds.
 
 **Gateway returns 503 Service Unavailable**
-The target service has not registered with Eureka yet. Check http://localhost:8761. Registration can take up to 30 seconds after a service starts.
+The target service has not registered with Eureka yet. Check http://localhost:18761. Registration can take up to 30 seconds after a service starts.
 
 **An order stays `PENDING` forever**
-Inventory-service is not running or is not consuming. Check its terminal for `Received OrderCreatedEvent`, and check consumer lag in the Kafka UI at http://localhost:8090.
+Inventory-service is not running or is not consuming. Check its terminal for `Received OrderCreatedEvent`, and check consumer lag in the Kafka UI at http://localhost:18090.
 
 **An order stays `INVENTORY_RESERVED` forever**
 Payment-service is down. This is exactly the failure mode a reconciliation job would handle; for now, start payment-service and it will consume the backlog from where it left off.
@@ -435,11 +478,15 @@ Payment-service is down. This is exactly the failure mode a reconciliation job w
 **Payments never decline**
 Your order total is below `payment.decline-above-amount`. Either order more expensive items or lower the threshold in `payment-service/src/main/resources/application.yml`.
 
-**Port already in use**
-`mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=9091`
+**Port already in use, or `bind: An attempt was made to access a socket in a way forbidden by its access permissions`**
+All ports here are in the 15001–49151 band on purpose. Windows (WinNAT, used by Docker, WSL and Hyper-V) reserves random blocks of ports at boot, but only inside the TCP dynamic port range, which is 49152–65535 by default and sometimes lowered to 1024–15000. Ports like 8080, 8761 and 9092 can land in those blocks, and then nothing can bind to them. Check what is reserved with `netsh interface ipv4 show excludedportrange protocol=tcp`. If you need to move a service, pick another port in the same band:
+`mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=18091`
 
 **Messages ended up on a `.DLT` topic**
 A listener threw three times. Open the dead-letter topic in the Kafka UI — the original message and the exception are both preserved in the record headers.
+
+**The showcase site stays on "In this browser"**
+It did not find the gateway. Check that api-gateway is up on port 18080 and that inventory-service is registered in Eureka, then press **Check again**. If the diagram stays empty while orders still complete, saga-monitor is not running.
 
 **Tests are slow on the first run**
 Maven is downloading dependencies and each embedded Kafka broker takes a few seconds to start. Later runs are much faster.

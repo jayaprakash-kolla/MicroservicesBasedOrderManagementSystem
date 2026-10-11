@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /**
  * The single public entry point.
  *
- * <p>Clients only ever talk to port 8080. The gateway looks up the target
+ * <p>Clients only ever talk to port 18080. The gateway looks up the target
  * service in Eureka and forwards the request, which means the business services
  * can move, scale, or change ports without any client knowing.
  *
@@ -21,7 +21,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class ApiGatewayApplication {
 
     /**
-     * Boots the gateway on port 8080.
+     * Boots the gateway on port 18080.
      *
      * @param args standard Spring Boot command line arguments
      */

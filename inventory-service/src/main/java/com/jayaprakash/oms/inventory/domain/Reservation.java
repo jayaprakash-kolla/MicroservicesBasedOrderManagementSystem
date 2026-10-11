@@ -68,6 +68,14 @@ public class Reservation {
         this.status = ReservationStatus.RELEASED;
     }
 
+    /**
+     * Marks this hold as committed, so a duplicate payment confirmation cannot
+     * deduct the same stock twice.
+     */
+    public void markCommitted() {
+        this.status = ReservationStatus.COMMITTED;
+    }
+
     public Long getId() {
         return id;
     }

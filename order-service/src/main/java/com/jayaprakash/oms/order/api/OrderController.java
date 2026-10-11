@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * The public API for orders. Reached through the gateway at
- * {@code http://localhost:8080/api/v1/orders}.
+ * {@code http://localhost:18080/api/v1/orders}.
  */
 @RestController
 @RequestMapping("/api/v1/orders")

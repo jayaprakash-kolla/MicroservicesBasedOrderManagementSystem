@@ -100,8 +100,9 @@ public class InventoryItem {
     }
 
     /**
-     * Converts reserved units into a permanent reduction. Called when an order
-     * is confirmed — not wired up in this build, but this is where it goes.
+     * Converts reserved units into a permanent reduction. Called when payment for
+     * an order completes: the units were already taken out of available stock
+     * at reservation time, so only the reserved counter moves.
      *
      * @param quantity units to finalise
      */

@@ -8,15 +8,16 @@ import org.springframework.context.annotation.Import;
 /**
  * Inventory service: holds stock, and gives it back when a saga unwinds.
  *
- * <p>It reacts to two events and publishes two. It has no idea payment-service
- * exists — it only knows that orders get created and sometimes cancelled.
+ * <p>It reacts to three events and publishes two. It never calls payment-service
+ * — it only knows that orders get created, sometimes cancelled, and sometimes
+ * paid for.
  */
 @SpringBootApplication
 @Import(KafkaMessagingConfig.class)
 public class InventoryServiceApplication {
 
     /**
-     * Boots the inventory service on port 8082.
+     * Boots the inventory service on port 18082.
      *
      * @param args standard Spring Boot command line arguments
      */

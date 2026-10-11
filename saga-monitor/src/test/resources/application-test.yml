@@ -1,0 +1,27 @@
+spring:
+  kafka:
+    bootstrap-servers: ${spring.embedded.kafka.brokers:localhost:19092}
+    consumer:
+      group-id: saga-monitor-test
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        metadata.max.age.ms: 1000
+
+saga-monitor:
+  topic-pattern: "(order|inventory|payment)-.*"
+  buffer-size: 50
+  heartbeat-ms: 60000
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+
+logging:
+  level:
+    com.jayaprakash.oms: DEBUG
+    org.apache.kafka: ERROR
+    kafka: ERROR

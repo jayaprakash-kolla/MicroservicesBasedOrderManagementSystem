@@ -20,7 +20,7 @@ import org.springframework.cloud.netflix.eureka.server.EnableEurekaServer;
 public class DiscoveryServerApplication {
 
     /**
-     * Boots the Eureka server on port 8761.
+     * Boots the Eureka server on port 18761.
      *
      * @param args standard Spring Boot command line arguments
      */

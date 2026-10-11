@@ -1,0 +1,47 @@
+server:
+  port: 18084
+
+spring:
+  application:
+    name: saga-monitor
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
+    consumer:
+      # Its own group: every business service still gets its own copy of
+      # every message, and this observer just gets one more.
+      group-id: saga-monitor
+      # Read from the start of a topic the first time it is seen, so the very
+      # first order's events are not missed while topics are still being created.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # Raw JSON strings, not typed events: a new event type can never break the monitor.
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        # Topics are auto-created on first use, and .DLT topics only appear after
+        # a failure. Refreshing metadata every 5s means the pattern subscription
+        # notices new topics quickly (Kafka's default is every 5 minutes).
+        metadata.max.age.ms: 5000
+
+saga-monitor:
+  # Matches all six saga topics and their dead-letter copies (e.g. order-created.DLT).
+  topic-pattern: "(order|inventory|payment)-.*"
+  # How many recent events to keep in memory for GET /api/v1/saga/events.
+  buffer-size: 500
+  # SSE comment sent to idle connections so proxies do not close them.
+  heartbeat-ms: 15000
+  # Browsers reconnect automatically after this.
+  emitter-timeout-ms: 1800000
+
+eureka:
+  instance:
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:18761/eureka}
+
+logging:
+  level:
+    com.jayaprakash.oms: INFO
+    org.apache.kafka: WARN
+    com.netflix.discovery: WARN
